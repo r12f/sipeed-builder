@@ -1,0 +1,56 @@
+#
+# Builder image
+#
+FROM ubuntu:22.04 as builder
+
+# Docker build Arguments
+ARG ML808_SDK_COMMIT=bf7e689cf49d57dd529e2492e5264ef602ed5b3c
+ARG XUANTIE_TOOLCHAIN_NAME=Xuantie-900-gcc-elf-newlib-x86_64-V2.2.4
+ARG XUANTIE_TOOLCHAIN_URL=https://occ-oss-prod.oss-cn-hangzhou.aliyuncs.com/resource/1836682/1640769638265/Xuantie-900-gcc-elf-newlib-x86_64-V2.2.4-20211227.tar.gz
+
+# Install dependencies
+RUN apt update && apt install wget unzip -y
+
+# Create working directory
+RUN mkdir -p /data/bl808
+WORKDIR /data
+
+# Get the SDK
+RUN wget https://github.com/sipeed/M1s_BL808_SDK/archive/${ML808_SDK_COMMIT}.zip -O sdk.zip
+RUN unzip sdk.zip
+RUN mv M1s_BL808_SDK-${ML808_SDK_COMMIT} /data/sdk
+
+# Get Xuantie build toolchain
+RUN wget ${XUANTIE_TOOLCHAIN_URL} -O toolchain.tar.gz
+RUN mkdir -p /data/sdk/toolchain
+RUN tar -zxvf toolchain.tar.gz -C /data/sdk/toolchain
+RUN mv /data/sdk/toolchain/${XUANTIE_TOOLCHAIN_NAME} /data/sdk/toolchain/Linux_x86_64
+
+#
+# Final image
+#
+FROM ubuntu:22.04
+
+# Environment variables
+ENV PROJECT_NAME=demo
+ENV BL808_BUILD_JOBS=16
+ENV BL808_BUILD_KEEP_BUILDER=0
+
+# Copy key binaries and resource files
+RUN mkdir -p /data/code/build_out
+
+COPY --from=builder /data/sdk /data/sdk
+
+COPY Makefile /data/code/Makefile
+COPY proj_config.mk /data/code/proj_config.mk
+COPY build.sh /data/code/build.sh
+RUN chmod +x /data/code/build.sh
+
+COPY demo /data/code/demo
+
+# Install build tools
+RUN apt update && apt install make
+
+# Run build
+WORKDIR /data/code
+CMD ["/bin/bash", "-c", "/data/code/build.sh"]
